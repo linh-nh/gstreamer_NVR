@@ -1,0 +1,13 @@
+# Lines start with # are ignored
+# First line is source name
+# Second line is pipeline
+# Must have at least one empty line between each source
+
+#test
+#appsrc name=jpgsrc is-live=true ! vaapijpegdec ! tee name=teevideo ! clockoverlay ! queue ! vaapipostproc ! vaapivp8enc ! appsink name=videorec teevideo. ! queue ! appsink name=videoanalysis appsrc name=jpgaudiosrc is-live=true ! tee name=teeaudio ! queue ! audioconvert ! opusenc ! appsink name=audiorec teeaudio. ! queue ! appsink name=audioanalysis
+
+lvr
+rtspsrc location=rtsp://admin:abcd1234@192.168.1.53/ch0_0.h264 is-live=true latency=100 name=src ! rtph264depay ! avdec_h264 ! tee name=teevideo ! clockoverlay ! queue ! vaapipostproc ! vaapivp8enc ! appsink name=videorec teevideo. ! queue ! appsink name=videoanalysis src. ! rtpL16depay ! tee name=teeaudio ! queue ! audioconvert ! opusenc ! appsink name=audiorec teeaudio. ! queue ! appsink name=audioanalysis
+
+bab
+rtspsrc location=rtsp://admin:abcd1234@192.168.1.51/ch0_0.h264 is-live=true latency=100 name=src ! rtph264depay ! avdec_h264 ! tee name=teevideo ! clockoverlay ! queue ! vaapipostproc ! vaapivp8enc ! appsink name=videorec teevideo. ! queue ! appsink name=videoanalysis src. ! rtpL16depay ! tee name=teeaudio ! queue ! audioconvert ! opusenc ! appsink name=audiorec teeaudio. ! queue ! appsink name=audioanalysis
