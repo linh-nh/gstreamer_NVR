@@ -10,10 +10,7 @@ g++ convert_to_mkv.c -o convert_to_mkv -g `pkg-config --cflags --libs gstreamer-
 bool audio_done = false;
 bool video_done = false;
 
-bool first_video_pts_added = false;
-bool first_audio_pts_added = false;
-GstClockTime first_video_pts;
-GstClockTime first_audio_pts;
+GstClockTime first_pts;
 
 static gboolean message_cb (GstBus * bus, GstMessage * message, gpointer user_data)
 {
@@ -53,6 +50,7 @@ guint64 videoframesize;
 
 void videoNeedData (GstAppSrc *src, guint length, gpointer user_data)
 {
+    static GstClockTime prev_pts = 0;
     guint64 max = gst_app_src_get_max_bytes(src);
     guint64 sum = 0;
     if (videoframesize > max)
@@ -71,12 +69,13 @@ void videoNeedData (GstAppSrc *src, guint length, gpointer user_data)
         GstClockTime pts;
         if (fread(&pts, sizeof(GstClockTime), 1, videofileread) != 1)
             goto eos;
-        if (!first_video_pts_added)
+        if (pts < prev_pts)
         {
-            first_video_pts = pts;
-            first_video_pts_added = true;
+            printf("video pts < prev_pts\n");
+            exit(1);
         }
-        GST_BUFFER_PTS(gbuf) = pts - first_video_pts;
+        prev_pts = pts;
+        GST_BUFFER_PTS(gbuf) = pts - first_pts;
         //printf("pts %u\n", GST_BUFFER_PTS(gbuf));   
         gst_app_src_push_buffer(src, gbuf);
         sum += videoframesize;
@@ -102,8 +101,10 @@ gboolean videoSeekData(GstAppSrc *src, guint64 offset, gpointer user_data)
     return false;
 }
 guint64 audioframesize = 0;
+
 void audioneedData (GstAppSrc *src, guint length, gpointer user_data)
 {
+    static GstClockTime prev_pts = 0;
     guint64 max = gst_app_src_get_max_bytes(src);
     guint64 sum = 0;
     if (audioframesize > max)
@@ -123,14 +124,13 @@ void audioneedData (GstAppSrc *src, guint length, gpointer user_data)
         GstClockTime pts;
         if (fread(&pts, sizeof(GstClockTime), 1, audiofileread) != 1)
             goto eos;
-        if (!first_audio_pts_added)
+        if (pts < prev_pts)
         {
-            first_audio_pts = pts;
-            first_audio_pts_added = true;
+            printf("audio pts < prev_pts\n");
+            exit(1);
         }
-        GST_BUFFER_PTS(gbuf) = pts - first_audio_pts;
-        //printf("%lu\n", pts);
-        GST_BUFFER_PTS(gbuf) = pts;
+        prev_pts = pts;
+        GST_BUFFER_PTS(gbuf) = pts - first_pts;
         //printf("pts %u\n", GST_BUFFER_PTS(gbuf));    
         gst_app_src_push_buffer(src, gbuf);
         sum += audioframesize;
@@ -166,8 +166,29 @@ int main(int argc, char **argv)
     //printf("%s %s\n", argv[1], argv[2]);
     fread(&audioframesize, 4,1,audiofileread);
     fread(&videoframesize, 4,1,videofileread);
+    GstClockTime audiofirstpts, videofirstpts;
+    
+    fseek(audiofileread, audioframesize + sizeof(GstBufferFlags), SEEK_CUR);
+    fseek(videofileread, videoframesize + sizeof(GstBufferFlags), SEEK_CUR);
+    fread(&audiofirstpts, sizeof(GstClockTime), 1, audiofileread);
+    fread(&videofirstpts, sizeof(GstClockTime), 1, videofileread);
+    
+    first_pts = audiofirstpts < videofirstpts ? audiofirstpts : videofirstpts;
+    
+    fclose(videofileread);
+    fclose(audiofileread);
+    
+    videofileread = fopen(argv[1], "r");
+    audiofileread = fopen(argv[2], "r");
+    //printf("%s %s\n", argv[1], argv[2]);
+    fread(&audioframesize, 4,1,audiofileread);
+    fread(&videoframesize, 4,1,videofileread);
+    
     printf("start videoframesize %lu\n", videoframesize);
     printf("start audioframesize %lu\n", audioframesize);
+    printf("start video pts %lu\n", videofirstpts);
+    printf("start audio pts %lu\n", audiofirstpts);
+    
     sprintf(launch_cmd, "appsrc name=videosrc ! video/x-vp8,width=640,height=480 ! matroskamux name=mux ! filesink location=%s appsrc name=audiosrc ! audio/x-opus,channels=1,rate=24000 ! mux.", argv[3]);
     GstElement *pipeline = gst_parse_launch (launch_cmd, &err);
     GstElement* videosrc = gst_bin_get_by_name(GST_BIN (pipeline), "videosrc");
